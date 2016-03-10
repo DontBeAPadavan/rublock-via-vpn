@@ -1,17 +1,18 @@
+#!/opt/bin/lua
+
 local config = {
     blSource = "antizapret", -- antizapret или rublacklist
-    groupBySld = 32, -- количество поддоменов после которого в список вносится весь домен второго уровня целиком
-    neverGroupMasks = { "^%a%a%a?.%a%a$" }, -- не праспространять на org.ru, net.ua и аналогичные
+    groupBySld = 16, -- количество поддоменов после которого в список вносится весь домен второго уровня целиком
+    neverGroupMasks = { "^%a%a%a?.%a%a$" }, -- не распространять на org.ru, net.ua и аналогичные
     neverGroupDomains = { ["livejournal.com"] = true, ["facebook.com"] = true , ["vk.com"] = true },
     stripWww = true,
-    convertIdn = true,
-    torifyNsLookups = false, -- отправлять DNS запросы заблокированных доменов через TOR
+    convertIdn = false,
+    altNsLookups = true, -- отправлять DNS запросы заблокированных доменов через отдельный DNS
     blMinimumEntries = 1000, -- костыль если список получился короче, значит что-то пошло не так и конфиги не обновляем
-    dnsmasqConfigPath = "/etc/runblock/runblock.dnsmasq",
-    ipsetConfigPath = "/etc/runblock/runblock.ipset",
-    ipsetDns = "rublack-dns",
-    ipsetIp = "rublack-ip",
-    torDnsAddr = "127.0.0.1#9053"
+    dnsmasqConfigPath = "/opt/etc/rublock.dnsmasq",
+    ipsetConfigPath = "/opt/etc/rublock.ips",
+    ipsetDns = "rublock",
+    altDNSAddr = "8.8.8.8"
 }
 
 
@@ -59,7 +60,7 @@ local function rublacklistExtractDomains()
         else
             buffer = buffer .. chunk
         end
-
+ 
         while true do
             local escapeStart, escapeEnd, escapedChar = buffer:find("\\(.)", bufferPos)
             if escapedChar then
@@ -148,7 +149,7 @@ local function normalizeFqdn()
         return (chunk)
     end
 end
-
+ 
 local function cunstructTables(bltables)
     bltables = bltables or { fqdn = {}, sdcount = {}, ips = {} }
     local f = function(blEntry, err)
@@ -211,8 +212,8 @@ end
 local function generateDnsmasqConfig(configPath, domainList)
     local configFile = assert(io.open(configPath, "w"), "could not open dnsmasq config")
     for fqdn in pairs(domainList) do
-        if config.torifyNsLookups then
-            configFile:write(string.format("server=/%s/%s\n", fqdn, config.torDnsAddr))
+        if config.altNsLookups then
+            configFile:write(string.format("server=/%s/%s\n", fqdn, config.altDNSAddr))
         end
         configFile:write(string.format("ipset=/%s/%s\n", fqdn, config.ipsetDns))
     end
@@ -221,11 +222,9 @@ end
 
 local function generateIpsetConfig(configPath, ipList)
     local configFile = assert(io.open(configPath, "w"), "could not open ipset config")
-    configFile:write(string.format("flush %s-tmp\n", config.ipsetIp))
     for ipaddr in pairs(ipList) do
-        configFile:write(string.format("add %s %s\n", config.ipsetIp, ipaddr))
+        configFile:write(string.format("%s\n", ipaddr))
     end
-    configFile:write(string.format("swap %s %s-tmp\n", config.ipsetIp, config.ipsetIp))
     configFile:close()
 end
 
